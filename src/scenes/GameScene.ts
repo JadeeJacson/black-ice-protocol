@@ -84,7 +84,6 @@ export class GameScene extends Phaser.Scene {
   private wells: Well[] = [];
 
   // 打击感与首领
-  private hitstop = 0;
   private medChance = 0.02;
   private vignette!: Phaser.GameObjects.Image;
   private orbs!: Phaser.Physics.Arcade.Group;
@@ -173,7 +172,6 @@ export class GameScene extends Phaser.Scene {
     this.arcs = [];
     this.wells = [];
     this.newRecord = false;
-    this.hitstop = 0;
     this.medChance = 0.02;
     this.boss = null;
     this.bossSpawned = false;
@@ -325,11 +323,6 @@ export class GameScene extends Phaser.Scene {
 
   update(_time: number, delta: number): void {
     if (this.paused || this.ended) return;
-    // 帧冻结（打击感）：冻结期间跳过世界模拟，仅扣减计时
-    if (this.hitstop > 0) {
-      this.hitstop -= Math.min(delta, 50) / 1000;
-      return;
-    }
     const dt = Math.min(delta, 50) / 1000;
     this.elapsed += dt;
     const p = this.player;
@@ -508,8 +501,6 @@ export class GameScene extends Phaser.Scene {
   private killEnemy(e: Enemy): void {
     this.kills++;
     if (e.kind === 'wall') this.achv.walls++;
-    // 打击感：击杀帧冻结
-    this.hitstop = Math.min(0.12, this.hitstop + (e.kind === 'boss' ? 0.12 : e.elite ? 0.05 : 0.02));
     if (e.kind === 'boss') {
       this.onBossKilled(e);
     } else {
