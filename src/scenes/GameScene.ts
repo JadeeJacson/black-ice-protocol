@@ -116,6 +116,12 @@ export class GameScene extends Phaser.Scene {
   create(): void {
     makeTextures(this);
 
+    // 防御：Clock 的 paused 标记不会被 Clock.shutdown 重置（Phaser 行为），
+    // endGame → scene.restart 后会残留「时钟冻结」，导致升级面板的 delayedCall 永不触发。
+    // 物理世界的 isPaused 同理有残留风险，一并强制复位。
+    this.time.paused = false;
+    this.physics.world.resume();
+
     // 关卡选择：标题界面写入 registry，scene.restart 后依然保留
     const stageId = (this.registry.get('stage') as string) || 'beacon';
     this.stage = getStage(stageId);
