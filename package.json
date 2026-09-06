@@ -1,7 +1,7 @@
 {
   "name": "black-ice-protocol",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.3.0",
   "type": "module",
   "description": "黑冰协议 —— 赛博朋克题材幸存者割草网页游戏",
   "scripts": {

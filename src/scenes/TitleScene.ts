@@ -3,7 +3,7 @@ import { GAME_TITLE, GAME_TITLE_EN, GAME_VERSION, PREMISE } from '../data/story'
 import { STAGES } from '../data/stages';
 import type { StageDef } from '../data/stages';
 import { ACHIEVEMENTS } from '../data/achievements';
-import { loadRecords, loadLastStage, saveLastStage, loadAchievements } from '../data/save';
+import { loadRecords, loadLastStage, saveLastStage, loadAchievements, loadTotalKills } from '../data/save';
 import { makeTextures } from '../systems/textures';
 import { unlockAudio, sfx } from '../audio';
 import { PAL, CSS, FONT } from '../themes';
@@ -26,6 +26,7 @@ export class TitleScene extends Phaser.Scene {
   private hint!: Phaser.GameObjects.Text;
   private footer!: Phaser.GameObjects.Text;
   private achvText!: Phaser.GameObjects.Text;
+  private killReserve!: Phaser.GameObjects.Text;
 
   /** 固定引用注册 resize 监听，便于场景 shutdown 时注销（否则镜头销毁后触发会崩溃） */
   private readonly onResize = (): void => this.layout();
@@ -125,6 +126,10 @@ export class TitleScene extends Phaser.Scene {
       fontFamily: FONT, fontSize: '11px', color: '#ffe14d',
     }).setOrigin(1, 0).setScrollFactor(0).setDepth(10);
 
+    this.killReserve = this.add.text(0, 0, `击杀储备 ${loadTotalKills()}`, {
+      fontFamily: FONT, fontSize: '11px', color: CSS.cyan,
+    }).setScrollFactor(0).setDepth(10);
+
     this.hint = this.add.text(0, 0, 'WASD / 方向键 移动    ·    触屏拖动移动    ·    ESC 暂停    ·    M 静音', {
       fontFamily: FONT, fontSize: '12px', color: CSS.textDim,
     }).setOrigin(0.5).setScrollFactor(0).setDepth(10);
@@ -163,10 +168,11 @@ export class TitleScene extends Phaser.Scene {
     this.grid.setSize(cam.width, cam.height);
     this.title.setPosition(cx, cam.height * 0.13);
     this.subtitle.setPosition(cx, cam.height * 0.13 + 48);
-    this.premise.setPosition(cx, cam.height * 0.29);
+    this.premise.setPosition(cx, cam.height * 0.13 + 92);
     this.premise.setWordWrapWidth(Math.min(560, cam.width - 48));
-    this.selectLabel.setPosition(cx, cam.height * 0.42);
+    this.selectLabel.setPosition(cx, cam.height * 0.45);
     this.achvText.setPosition(cam.width - 12, 12);
+    this.killReserve.setPosition(12, 12);
     const cardW = Math.min(440, cam.width - 40);
     const y0 = cam.height * 0.47;
     const step = 0.062 * cam.height;

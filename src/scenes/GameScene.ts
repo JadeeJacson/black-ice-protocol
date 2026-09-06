@@ -9,12 +9,14 @@ import { getStage } from '../data/stages';
 import type { StageDef } from '../data/stages';
 import { ACHIEVEMENTS } from '../data/achievements';
 import type { AchvCtx } from '../data/achievements';
-import { loadRecords, saveRecords, loadPlayCount, savePlayCount, loadAchievements, saveAchievements } from '../data/save';
+import { rollPrerunOffers, MIN_BUFF_COST } from '../data/prerun';
+import type { PrerunBuff } from '../data/prerun';
+import { loadRecords, saveRecords, loadPlayCount, savePlayCount, loadAchievements, saveAchievements, loadTotalKills, saveTotalKills, loadBuffPurchases, saveBuffPurchases } from '../data/save';
 import { makeTextures } from '../systems/textures';
 import { Joystick } from '../systems/Joystick';
 import { DamageNumbers } from '../systems/DamageNumbers';
 import { AchievementToast } from '../systems/AchievementToast';
-import { sfx, toggleMute, isMuted } from '../audio';
+import { sfx, toggleMute, isMuted, startMusic, stopMusic } from '../audio';
 import { PAL, CSS, FONT } from '../themes';
 
 const WORLD = 2400;
@@ -34,6 +36,8 @@ interface Well {
   level: number;
   gfx: Phaser.GameObjects.Image;
 }
+
+type BossPhase = 'chase' | 'tele' | 'dash';
 
 export class GameScene extends Phaser.Scene {
   private player!: Player;
@@ -79,13 +83,29 @@ export class GameScene extends Phaser.Scene {
   private arcGfx!: Phaser.GameObjects.Graphics;
   private wells: Well[] = [];
 
+  // 打击感与首领
+  private hitstop = 0;
+  private medChance = 0.02;
+  private vignette!: Phaser.GameObjects.Image;
+  private orbs!: Phaser.Physics.Arcade.Group;
+  private boss: Enemy | null = null;
+  private bossSpawned = false;
+  private bossPhase: BossPhase = 'chase';
+  private bossTimer = 0;
+  private bossCycles = 0;
+  private bossDashA = 0;
+  private bossBarBg!: Phaser.GameObjects.Rectangle;
+  private bossBarFill!: Phaser.GameObjects.Rectangle;
+  private bossBarName!: Phaser.GameObjects.Text;
+  private prerunOpen = false;
+
   // 成就与纪录
   private dmgNums!: DamageNumbers;
   private toast!: AchievementToast;
   private unlockedAchv = new Set<string>();
   private playCountTotal = 0;
   private winCountTotal = 0;
-  private achv = { walls: 0, dist: 0, maxChain: 0, hitTaken: false };
+  private achv = { walls: 0, dist: 0, maxChain: 0, hitTaken: false, bossKilled: false };
   private achvTimer = 5;
 
   // HUD
@@ -153,7 +173,15 @@ export class GameScene extends Phaser.Scene {
     this.arcs = [];
     this.wells = [];
     this.newRecord = false;
-    this.achv = { walls: 0, dist: 0, maxChain: 0, hitTaken: false };
+    this.hitstop = 0;
+    this.medChance = 0.02;
+    this.boss = null;
+    this.bossSpawned = false;
+    this.bossPhase = 'chase';
+    this.bossTimer = 0;
+    this.bossCycles = 0;
+    this.prerunOpen = false;
+    this.achv = { walls: 0, dist: 0, maxChain: 0, hitTaken: false, bossKilled: false };
     this.achvTimer = 5;
     this.unlockedAchv = new Set(loadAchievements());
     this.playCountTotal = loadPlayCount();
@@ -202,6 +230,7 @@ export class GameScene extends Phaser.Scene {
     this.shards = this.physics.add.group({ classType: Phaser.Physics.Arcade.Sprite, maxSize: 60 });
     this.gems = this.physics.add.group({ maxSize: 140 });
     this.meds = this.physics.add.group({ maxSize: 8 });
+    this.orbs = this.physics.add.group({ classType: Phaser.Physics.Arcade.Sprite, maxSize: 40 });
 
     this.physics.add.overlap(this.bullets, this.enemies, (b, e) =>
       this.onBulletHit(b as Phaser.Physics.Arcade.Sprite, e as Enemy));
@@ -213,11 +242,19 @@ export class GameScene extends Phaser.Scene {
       this.collectGem(g as Phaser.Physics.Arcade.Sprite));
     this.physics.add.overlap(this.player, this.meds, (_p, m) =>
       this.collectMed(m as Phaser.Physics.Arcade.Sprite));
+    this.physics.add.overlap(this.player, this.orbs, (_p, o) => {
+      const orb = o as Phaser.Physics.Arcade.Sprite;
+      if (!orb.active) return;
+      orb.disableBody(true, true);
+      this.damagePlayer(15);
+    });
 
     // ---- 特效层 ----
     this.arcGfx = this.add.graphics().setDepth(17);
     this.dmgNums = new DamageNumbers(this);
     this.toast = new AchievementToast(this);
+    this.vignette = this.add.image(cam.width / 2, cam.height / 2, 'vignette')
+      .setScrollFactor(0).setDepth(86).setAlpha(0);
 
     // ---- 输入 ----
     this.cursors = this.input.keyboard!.createCursorKeys();
@@ -257,6 +294,14 @@ export class GameScene extends Phaser.Scene {
     this.pauseBtn.on('pointerout', () => this.pauseBtn.setColor(CSS.textDim));
     this.pauseBtn.on('pointerdown', () => this.togglePause());
 
+    // 首领血条（默认隐藏）
+    this.bossBarName = this.add.text(0, 0, '', { fontFamily: FONT, fontSize: '12px', color: CSS.red })
+      .setOrigin(0.5).setScrollFactor(0).setDepth(82).setVisible(false);
+    this.bossBarBg = this.add.rectangle(0, 0, 304, 8, 0x0a1020)
+      .setOrigin(0.5).setStrokeStyle(1, 0x552233, 1).setScrollFactor(0).setDepth(82).setVisible(false);
+    this.bossBarFill = this.add.rectangle(0, 0, 300, 5, PAL.neonRed)
+      .setOrigin(0, 0.5).setScrollFactor(0).setDepth(83).setVisible(false);
+
     this.scan = this.add.tileSprite(0, 0, cam.width, cam.height, 'scan')
       .setOrigin(0).setScrollFactor(0).setDepth(120).setAlpha(0.4);
 
@@ -268,12 +313,23 @@ export class GameScene extends Phaser.Scene {
     this.stage.intro.forEach((line, i) => {
       this.time.delayedCall(400 + i * 2600, () => this.showMessage(line, 2.4));
     });
+
+    // ---- 进场增益（击杀储备充足时弹出，倒计时从选择后开始）----
+    this.maybeOpenPrerunPanel();
+
+    // ---- BGM ----
+    startMusic(() => (this.ended ? 0.05 : Phaser.Math.Clamp(this.elapsed / this.stage.duration, 0, 1)));
   }
 
   // ================= 主循环 =================
 
   update(_time: number, delta: number): void {
     if (this.paused || this.ended) return;
+    // 帧冻结（打击感）：冻结期间跳过世界模拟，仅扣减计时
+    if (this.hitstop > 0) {
+      this.hitstop -= Math.min(delta, 50) / 1000;
+      return;
+    }
     const dt = Math.min(delta, 50) / 1000;
     this.elapsed += dt;
     const p = this.player;
@@ -327,9 +383,10 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
-    this.updateEnemies();
+    this.updateEnemies(dt);
     this.updateSpawner(dt);
     this.updateGems();
+    this.updateBoss(dt);
 
     // HUD
     this.xpFill.setScale(Phaser.Math.Clamp(this.xp / this.xpNext, 0, 1), 1);
@@ -340,6 +397,15 @@ export class GameScene extends Phaser.Scene {
     this.timeText.setText(this.fmt(this.stage.duration - this.elapsed));
     this.killText.setText(`击杀 ${this.kills}`);
     this.levelText.setText(`LV.${this.level}`);
+
+    // 低血量警告
+    const lowHp = hpPct > 0 && hpPct < 0.3;
+    this.vignette.setAlpha(lowHp ? 0.55 + 0.4 * Math.sin(this.elapsed * 7) : Math.max(0, this.vignette.alpha - dt * 2));
+
+    // 首领登场
+    if (!this.bossSpawned && this.elapsed >= this.stage.duration - 75) {
+      this.spawnBoss();
+    }
 
     // 剧情节点
     while (this.beatIndex < this.beatTimes.length && this.elapsed >= this.beatTimes[this.beatIndex].t) {
@@ -408,17 +474,19 @@ export class GameScene extends Phaser.Scene {
   }
 
   private onBulletHit(b: Phaser.Physics.Arcade.Sprite, e: Enemy): void {
-    if (!b.active || !e.active) return;
+    if (!b.active || !e.active || !b.body) return;
     const hits = b.getData('hits') as Set<Enemy>;
     if (hits.has(e)) return;
     hits.add(e);
-    this.hurtEnemy(e, b.getData('dmg') as number);
+    const v = b.body.velocity;
+    const m = Math.hypot(v.x, v.y) || 1;
+    this.hurtEnemy(e, b.getData('dmg') as number, (v.x / m) * 130, (v.y / m) * 130);
     const pierce = (b.getData('pierce') as number) ?? 0;
     if (pierce <= 0) b.disableBody(true, true);
     else b.setData('pierce', pierce - 1);
   }
 
-  private hurtEnemy(e: Enemy, dmg: number): void {
+  private hurtEnemy(e: Enemy, dmg: number, kbX = 0, kbY = 0): void {
     if (!e.active) return;
     let d = dmg;
     let crit = false;
@@ -427,6 +495,10 @@ export class GameScene extends Phaser.Scene {
       crit = true;
     }
     e.hp -= d;
+    // 击退冲量：重装敌人衰减更明显（乘数更小），由 updateEnemies 每帧衰减
+    const kbMul = e.kind === 'wall' ? 0.3 : e.kind === 'boss' ? 0.12 : 1;
+    e.kbX += kbX * kbMul;
+    e.kbY += kbY * kbMul;
     this.dmgNums.show(e.x, e.y - 12, Math.max(1, Math.round(d)), crit);
     e.hitFlash();
     sfx('hit');
@@ -436,12 +508,38 @@ export class GameScene extends Phaser.Scene {
   private killEnemy(e: Enemy): void {
     this.kills++;
     if (e.kind === 'wall') this.achv.walls++;
-    this.spawnGem(e.x, e.y, e.xp);
-    if (Math.random() < 0.02) this.spawnMed(e.x, e.y);
-    this.burst(e.x, e.y, ENEMY_CONF[e.kind].tint, 8);
+    // 打击感：击杀帧冻结
+    this.hitstop = Math.min(0.12, this.hitstop + (e.kind === 'boss' ? 0.12 : e.elite ? 0.05 : 0.02));
+    if (e.kind === 'boss') {
+      this.onBossKilled(e);
+    } else {
+      this.spawnGem(e.x, e.y, e.xp);
+      if (Math.random() < this.medChance || (e.elite && Math.random() < 0.25)) this.spawnMed(e.x, e.y);
+      this.burst(e.x, e.y, ENEMY_CONF[e.kind].tint, e.elite ? 14 : 8);
+      sfx('kill');
+      e.disableBody(true, true);
+    }
+    this.checkAchv(false);
+  }
+
+  private onBossKilled(e: Enemy): void {
+    this.boss = null;
+    this.bossBarName.setVisible(false);
+    this.bossBarBg.setVisible(false);
+    this.bossBarFill.setVisible(false);
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2;
+      this.spawnGem(e.x + Math.cos(a) * 40, e.y + Math.sin(a) * 40, 5);
+    }
+    this.spawnMed(e.x - 20, e.y);
+    this.spawnMed(e.x + 20, e.y);
+    this.burst(e.x, e.y, PAL.neonRed, 30);
+    this.cameras.main.shake(300, 0.008);
+    this.cameras.main.flash(300, 255, 80, 100);
+    this.showMessage('>> 看守者协议崩溃。吸收它的残余数据。', 3);
     sfx('kill');
     e.disableBody(true, true);
-    this.checkAchv(false);
+    this.achv.bossKilled = true;
   }
 
   private fireNova(): void {
@@ -459,7 +557,8 @@ export class GameScene extends Phaser.Scene {
     for (const c of this.enemies.getChildren()) {
       const en = c as Enemy;
       if (en.active && Phaser.Math.Distance.Between(en.x, en.y, p.x, p.y) < p.novaRadius) {
-        this.hurtEnemy(en, p.novaDmg * p.damageMul);
+        const a = Math.atan2(en.y - p.y, en.x - p.x);
+        this.hurtEnemy(en, p.novaDmg * p.damageMul, Math.cos(a) * 150, Math.sin(a) * 150);
       }
     }
     sfx('nova');
@@ -492,7 +591,8 @@ export class GameScene extends Phaser.Scene {
       const d = Phaser.Math.Distance.Between(en.x, en.y, p.x, p.y);
       if (Math.abs(d - p.orbitRadius) < 24) {
         en.orbitTick = this.elapsed + 0.4;
-        this.hurtEnemy(en, p.orbitDmg * p.damageMul);
+        const a = Math.atan2(en.y - p.y, en.x - p.x);
+        this.hurtEnemy(en, p.orbitDmg * p.damageMul, Math.cos(a) * 110, Math.sin(a) * 110);
       }
     }
   }
@@ -522,9 +622,12 @@ export class GameScene extends Phaser.Scene {
     });
     if (hit.length > this.achv.maxChain) this.achv.maxChain = hit.length;
     const dmg = 14 * p.arcLevel * p.damageMul;
+    let prev = new Phaser.Math.Vector2(p.x, p.y);
     for (const e of hit) {
-      this.hurtEnemy(e, dmg);
+      const a = Math.atan2(e.y - prev.y, e.x - prev.x);
+      this.hurtEnemy(e, dmg, Math.cos(a) * 90, Math.sin(a) * 90);
       this.burst(e.x, e.y, 0xffe14d, 4);
+      prev = new Phaser.Math.Vector2(e.x, e.y);
     }
     sfx('zap');
     this.checkAchv(false);
@@ -644,7 +747,8 @@ export class GameScene extends Phaser.Scene {
       for (const c of this.enemies.getChildren()) {
         const en = c as Enemy;
         if (en.active && Phaser.Math.Distance.Between(en.x, en.y, w.x, w.y) < w.r + 30) {
-          this.hurtEnemy(en, (30 + 22 * w.level) * p.damageMul);
+          const a = Math.atan2(en.y - w.y, en.x - w.x);
+          this.hurtEnemy(en, (30 + 22 * w.level) * p.damageMul, Math.cos(a) * 170, Math.sin(a) * 170);
         }
       }
       this.cameras.main.shake(110, 0.004);
@@ -689,15 +793,17 @@ export class GameScene extends Phaser.Scene {
 
   // ================= 敌人与生成 =================
 
-  private updateEnemies(): void {
+  private updateEnemies(dt: number): void {
     const p = this.player;
+    const kbDecay = Math.exp(-8 * dt);
     for (const c of this.enemies.getChildren()) {
       const en = c as Enemy;
       if (!en.active) continue;
+      if (en.kind === 'boss') continue; // 首领由 updateBoss 驱动
       const baseA = Phaser.Math.Angle.Between(en.x, en.y, p.x, p.y);
       const a = baseA + Math.sin(this.elapsed * 2.2 + en.wobble) * 0.3;
-      let vx = Math.cos(a) * en.speed;
-      let vy = Math.sin(a) * en.speed;
+      let vx = Math.cos(a) * en.speed + en.kbX;
+      let vy = Math.sin(a) * en.speed + en.kbY;
       for (const w of this.wells) {
         const d = Phaser.Math.Distance.Between(en.x, en.y, w.x, w.y);
         if (d < w.r && d > 4) {
@@ -707,7 +813,10 @@ export class GameScene extends Phaser.Scene {
         }
       }
       en.setVelocity(vx, vy);
+      en.kbX *= kbDecay;
+      en.kbY *= kbDecay;
       en.setRotation(baseA + Math.PI / 2);
+      if (en.elite) en.setAlpha(0.7 + 0.3 * Math.sin(this.elapsed * 6 + en.wobble));
       if (Phaser.Math.Distance.Between(en.x, en.y, p.x, p.y) > 1500) {
         const pos = this.spawnPos();
         en.setPosition(pos.x, pos.y);
@@ -770,7 +879,8 @@ export class GameScene extends Phaser.Scene {
     const e = this.enemies.get(0, 0) as Enemy | null;
     if (!e) return;
     const pos = this.spawnPos();
-    e.spawn(this.pickKind(), pos.x, pos.y, this.difficultyHp(), this.difficultySpeed());
+    const elite = this.elapsed > 120 && Math.random() < 0.04;
+    e.spawn(this.pickKind(), pos.x, pos.y, this.difficultyHp(), this.difficultySpeed(), elite);
   }
 
   private burstWave(): void {
@@ -782,10 +892,11 @@ export class GameScene extends Phaser.Scene {
       if (!e) break;
       const a = (i / n) * Math.PI * 2;
       const kind: EnemyKind = this.elapsed > this.stage.fast.after + 60 && i % 3 === 0 ? 'fast' : 'chaser';
+      const elite = this.elapsed > 90 && (i === 0 || i === 9);
       e.spawn(kind,
         Phaser.Math.Clamp(p.x + Math.cos(a) * R, 30, WORLD - 30),
         Phaser.Math.Clamp(p.y + Math.sin(a) * R, 30, WORLD - 30),
-        this.difficultyHp(), this.difficultySpeed());
+        this.difficultyHp(), this.difficultySpeed(), elite);
     }
     this.showMessage('>> 警告：检测到 ICE 包围网。', 2.5);
   }
@@ -966,7 +1077,7 @@ export class GameScene extends Phaser.Scene {
   // ================= 暂停 =================
 
   private togglePause(): void {
-    if (this.ended) return;
+    if (this.ended || this.prerunOpen) return;
     if (this.pauseOpen) {
       this.pauseOpen = false;
       this.clearPanel();
@@ -1016,6 +1127,186 @@ export class GameScene extends Phaser.Scene {
     this.panelObjects.push(resumeBtn, soundBtn, restartBtn, titleBtn);
   }
 
+  // ================= 首领：看守者 =================
+
+  private spawnBoss(): void {
+    const e = this.enemies.get(0, 0) as Enemy | null;
+    if (!e) return; // 池满，下一帧重试
+    this.bossSpawned = true;
+    const pos = this.spawnPos();
+    e.spawn('boss', pos.x, pos.y, 1, 1);
+    this.boss = e;
+    this.bossPhase = 'chase';
+    this.bossTimer = 2;
+    this.bossCycles = 0;
+    const cam = this.cameras.main;
+    this.bossBarName.setText('看守者 // ' + this.stage.name).setPosition(cam.width / 2, 44).setVisible(true);
+    this.bossBarBg.setPosition(cam.width / 2, 57).setVisible(true);
+    this.bossBarFill.setPosition(cam.width / 2 - 150, 57).setOrigin(0, 0.5).setVisible(true);
+    this.showMessage('>> 警告：看守者苏醒。它饿了很久。', 3.5);
+    sfx('boss');
+    this.cameras.main.shake(250, 0.005);
+  }
+
+  private updateBoss(dt: number): void {
+    const b = this.boss;
+    if (!b || !b.active) return;
+    this.bossTimer -= dt;
+    const p = this.player;
+    const cam = this.cameras.main;
+    this.bossBarName.setPosition(cam.width / 2, 44);
+    this.bossBarBg.setPosition(cam.width / 2, 57);
+    this.bossBarFill.setPosition(cam.width / 2 - 150, 57);
+    this.bossBarFill.setScale(Phaser.Math.Clamp(b.hp / b.maxHp, 0, 1), 1);
+
+    if (this.bossPhase === 'chase') {
+      const a = Phaser.Math.Angle.Between(b.x, b.y, p.x, p.y);
+      const sp = ENEMY_CONF.boss.speed * this.difficultySpeed();
+      b.setVelocity(Math.cos(a) * sp, Math.sin(a) * sp);
+      if (this.bossTimer <= 0) {
+        this.bossCycles++;
+        if (this.bossCycles % 2 === 0) this.bossRadialOrbs(b);
+        if (this.bossCycles % 3 === 0) this.bossSummon(b);
+        this.bossPhase = 'tele';
+        this.bossTimer = 0.6;
+        b.setTintFill(0xffffff); // 蓄力闪白
+      }
+    } else if (this.bossPhase === 'tele') {
+      b.setVelocity(0, 0);
+      this.bossDashA = Phaser.Math.Angle.Between(b.x, b.y, p.x, p.y);
+      if (this.bossTimer <= 0) {
+        b.setTint(ENEMY_CONF.boss.tint);
+        this.bossPhase = 'dash';
+        this.bossTimer = 0.42;
+        sfx('orb');
+      }
+    } else { // dash
+      b.setVelocity(Math.cos(this.bossDashA) * 520, Math.sin(this.bossDashA) * 520);
+      if (this.bossTimer <= 0) {
+        this.bossPhase = 'chase';
+        this.bossTimer = 2.2;
+      }
+    }
+  }
+
+  private bossRadialOrbs(b: Enemy): void {
+    const offset = Math.random() * Math.PI;
+    for (let i = 0; i < 10; i++) {
+      const o = this.orbs.get(b.x, b.y, 'bullet') as Phaser.Physics.Arcade.Sprite | null;
+      if (!o) break;
+      const a = offset + (i / 10) * Math.PI * 2;
+      o.enableBody(true, b.x, b.y, true, true);
+      o.setTint(0xff5060).setDepth(13).setScale(1.4);
+      o.setVelocity(Math.cos(a) * 140, Math.sin(a) * 140);
+      this.time.delayedCall(5000, () => {
+        if (o.active) o.disableBody(true, true);
+      });
+    }
+    sfx('orb');
+  }
+
+  private bossSummon(b: Enemy): void {
+    for (let i = 0; i < 4; i++) {
+      const e = this.enemies.get(0, 0) as Enemy | null;
+      if (!e) break;
+      const a = Math.random() * Math.PI * 2;
+      e.spawn('chaser', b.x + Math.cos(a) * 70, b.y + Math.sin(a) * 70, this.difficultyHp(), this.difficultySpeed());
+    }
+    this.showMessage('>> 看守者正在孵化护卫进程。', 2);
+  }
+
+  // ================= 进场增益 =================
+
+  private maybeOpenPrerunPanel(): void {
+    const total = loadTotalKills();
+    if (total < MIN_BUFF_COST) return;
+    const offers = rollPrerunOffers(3);
+    if (offers.length === 0) return;
+    this.pauseRun();
+    this.prerunOpen = true;
+    const cam = this.cameras.main;
+    const cx = cam.width / 2;
+    const cy = cam.height / 2;
+    this.panelObjects.push(
+      this.add.rectangle(cx, cy, cam.width + 2, cam.height + 2, 0x02030a, 0.82).setScrollFactor(0).setDepth(90),
+    );
+    this.panelObjects.push(
+      this.add.text(cx, cy - 168, '// 接入准备：消耗击杀储备', { fontFamily: FONT, fontSize: '19px', color: '#ffe14d' })
+        .setOrigin(0.5).setScrollFactor(0).setDepth(95),
+    );
+    const currency = this.add.text(cx, cy - 132, `击杀储备 ${total}`, { fontFamily: FONT, fontSize: '13px', color: CSS.textDim })
+      .setOrigin(0.5).setScrollFactor(0).setDepth(95);
+    this.panelObjects.push(currency);
+    const cardW = Math.min(360, cam.width - 48);
+    offers.forEach((u, i) => {
+      const y = cy - 78 + i * 88;
+      const afford = total >= u.cost;
+      const bg = this.add.rectangle(cx, y, cardW, 74, PAL.panel, afford ? 0.96 : 0.55)
+        .setStrokeStyle(1, afford ? PAL.neonYellow : 0x444444, afford ? 0.6 : 0.3)
+        .setScrollFactor(0).setDepth(95)
+        .setInteractive({ useHandCursor: true });
+      const name = this.add.text(cx - cardW / 2 + 16, y - 24, u.name, { fontFamily: FONT, fontSize: '16px', color: afford ? '#ffe14d' : CSS.textDim }).setScrollFactor(0).setDepth(95);
+      const cost = this.add.text(cx + cardW / 2 - 14, y - 24, `${u.cost} 击杀`, { fontFamily: FONT, fontSize: '12px', color: afford ? CSS.green : CSS.red }).setOrigin(1, 0).setScrollFactor(0).setDepth(95);
+      const desc = this.add.text(cx - cardW / 2 + 16, y + 0, u.desc, { fontFamily: FONT, fontSize: '12px', color: afford ? CSS.text : CSS.textDim, wordWrap: { width: cardW - 32 } }).setScrollFactor(0).setDepth(95);
+      this.panelObjects.push(bg, name, cost, desc);
+      if (afford) {
+        bg.on('pointerover', () => bg.setStrokeStyle(2, PAL.neonYellow, 1));
+        bg.on('pointerout', () => bg.setStrokeStyle(1, PAL.neonYellow, 0.6));
+        bg.on('pointerdown', () => this.pickPrerunBuff(u));
+      }
+    });
+    const skip = this.add.text(cx, cy + 200, '[ 不用了，直接接入 ]', { fontFamily: FONT, fontSize: '15px', color: CSS.textDim })
+      .setOrigin(0.5).setScrollFactor(0).setDepth(95).setInteractive({ useHandCursor: true });
+    skip.on('pointerover', () => skip.setColor('#ffffff'));
+    skip.on('pointerout', () => skip.setColor(CSS.textDim));
+    skip.on('pointerdown', () => this.closePrerunPanel());
+    this.panelObjects.push(skip);
+  }
+
+  private pickPrerunBuff(u: PrerunBuff): void {
+    const total = loadTotalKills();
+    if (total < u.cost) return;
+    saveTotalKills(total - u.cost);
+    saveBuffPurchases(loadBuffPurchases() + 1);
+    this.applyPrerunBuff(u);
+    sfx('levelup');
+    this.closePrerunPanel();
+  }
+
+  private closePrerunPanel(): void {
+    this.prerunOpen = false;
+    this.clearPanel();
+    this.resumeRun();
+  }
+
+  private applyPrerunBuff(u: PrerunBuff): void {
+    const p = this.player;
+    switch (u.id) {
+      case 'bulk':
+        p.maxHp += 60;
+        p.hp = Math.min(p.maxHp, p.hp + 60);
+        break;
+      case 'speed':
+        p.speed *= 1.15;
+        break;
+      case 'magnet':
+        p.pickupRange *= 1.6;
+        this.medChance = 0.04;
+        break;
+      case 'dmg':
+        p.damageMul += 0.25;
+        break;
+      case 'orbit1':
+        p.orbitBlades += 1;
+        this.syncOrbitBlades();
+        break;
+      case 'level3':
+        this.pendingLevels += 3;
+        this.openLevelUp();
+        break;
+    }
+  }
+
   // ================= 结算 =================
 
   private endGame(win: boolean): void {
@@ -1024,11 +1315,16 @@ export class GameScene extends Phaser.Scene {
     this.clearPanel(); // 防御：若升级面板还开着，先清掉避免叠层
     this.pauseRun();
     this.joystick?.hide();
+    stopMusic();
+    this.bossBarName.setVisible(false);
+    this.bossBarBg.setVisible(false);
+    this.bossBarFill.setVisible(false);
     sfx(win ? 'win' : 'lose');
     this.cameras.main.flash(400, win ? 0 : 255, win ? 255 : 60, win ? 200 : 80);
     if (!win) this.burst(this.player.x, this.player.y, PAL.neonCyan, 24);
 
-    // 纪录与生涯
+    // 纪录与生涯（总击杀 = 进场增益货币）
+    saveTotalKills(loadTotalKills() + this.kills);
     const recs = loadRecords();
     const rec = recs[this.stage.id] ?? { wins: 0, bestKills: 0, bestAlive: 0 };
     this.newRecord = this.kills > rec.bestKills;
@@ -1102,6 +1398,8 @@ export class GameScene extends Phaser.Scene {
       win,
       hpPctAtWin: p.hp / p.maxHp,
       hitTaken: this.achv.hitTaken,
+      bossKilled: this.achv.bossKilled,
+      buffPurchases: loadBuffPurchases(),
     };
     for (const a of ACHIEVEMENTS) {
       if (this.unlockedAchv.has(a.id)) continue;
@@ -1124,6 +1422,11 @@ export class GameScene extends Phaser.Scene {
     this.message.setWordWrapWidth(cam.width - 60);
     this.muteHint.setPosition(cam.width - 34, cam.height - 8);
     this.pauseBtn.setPosition(cam.width - 16, 24);
+    this.vignette.setPosition(cam.width / 2, cam.height / 2);
+    this.vignette.setDisplaySize(cam.width * 1.05, cam.height * 1.05);
+    this.bossBarName.setPosition(cam.width / 2, 44);
+    this.bossBarBg.setPosition(cam.width / 2, 57);
+    this.bossBarFill.setPosition(cam.width / 2 - 150, 57);
     this.scan.setSize(cam.width, cam.height);
   }
 

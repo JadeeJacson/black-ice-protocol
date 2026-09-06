@@ -20,6 +20,8 @@ export interface AchvCtx {
   win: boolean;
   hpPctAtWin: number;
   hitTaken: boolean;
+  bossKilled: boolean;
+  buffPurchases: number;
 }
 
 export interface AchvDef {
@@ -42,4 +44,6 @@ export const ACHIEVEMENTS: AchvDef[] = [
   { id: 'no_hit_win',   name: '完美潜入',   desc: '未受任何伤害通关',                        test: (c) => c.win && !c.hitTaken },
   { id: 'all_weapons',  name: '全栈武装',   desc: '同时持有全部 5 种特殊武器',               test: (c) => c.orbitLv > 0 && c.novaLv > 0 && c.arcLv > 0 && c.shardLv > 0 && c.wellLv > 0 },
   { id: 'distance_5000', name: '漫游者',    desc: '单局累计移动 5000 单位',                  test: (c) => c.dist >= 5000 },
+  { id: 'boss_kill',    name: '弑神',       desc: '首次击败看守者',                          test: (c) => c.bossKilled },
+  { id: 'buff_buy',     name: '初次交易',   desc: '首次消耗击杀储备购买进场增益',            test: (c) => c.buffPurchases >= 1 },
 ];

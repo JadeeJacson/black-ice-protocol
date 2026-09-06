@@ -185,6 +185,39 @@ export function makeTextures(scene: Phaser.Scene): void {
     c.fillRect(0, 0, 2, 2);
   });
 
+  // 看守者（双环六边形，64px）
+  mk('e_boss', 64, 64, (c) => {
+    for (const [r, w, a] of [[29, 3, 1], [22, 2, 0.5]] as const) {
+      c.beginPath();
+      for (let i = 0; i < 6; i++) {
+        const ang = (Math.PI / 3) * i - Math.PI / 6;
+        const x = 32 + Math.cos(ang) * r;
+        const y = 32 + Math.sin(ang) * r;
+        if (i === 0) c.moveTo(x, y); else c.lineTo(x, y);
+      }
+      c.closePath();
+      c.fillStyle = `rgba(255,255,255,${0.12 * a})`;
+      c.fill();
+      c.lineWidth = w;
+      c.strokeStyle = `rgba(255,255,255,${a})`;
+      c.stroke();
+    }
+    c.beginPath();
+    c.arc(32, 32, 6, 0, Math.PI * 2);
+    c.fillStyle = 'rgba(255,255,255,0.9)';
+    c.fill();
+  });
+
+  // 低血量警告晕影（红边）
+  mk('vignette', 512, 512, (c) => {
+    const g = c.createRadialGradient(256, 256, 140, 256, 256, 300);
+    g.addColorStop(0, 'rgba(255,40,80,0)');
+    g.addColorStop(0.75, 'rgba(255,40,80,0.12)');
+    g.addColorStop(1, 'rgba(255,40,80,0.55)');
+    c.fillStyle = g;
+    c.fillRect(0, 0, 512, 512);
+  });
+
   // CRT 扫描线
   mk('scan', 4, 4, (c) => {
     c.fillStyle = 'rgba(255,255,255,0.02)';

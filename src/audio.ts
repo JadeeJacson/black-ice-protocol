@@ -45,10 +45,10 @@ export function isMuted(): boolean {
   return muted;
 }
 
-function tone(type: OscillatorType, from: number, to: number | undefined, dur: number, vol: number, delay = 0): void {
+function tone(type: OscillatorType, from: number, to: number | undefined, dur: number, vol: number, delay = 0, at?: number): void {
   const c = ensure();
   if (!c || !master) return;
-  const t0 = c.currentTime + delay;
+  const t0 = at ?? c.currentTime + delay;
   const osc = c.createOscillator();
   const g = c.createGain();
   osc.type = type;
@@ -63,9 +63,10 @@ function tone(type: OscillatorType, from: number, to: number | undefined, dur: n
   osc.stop(t0 + dur + 0.05);
 }
 
-function noise(dur: number, vol: number, highpass: number): void {
+function noise(dur: number, vol: number, highpass: number, at?: number): void {
   const c = ensure();
   if (!c || !master) return;
+  const t0 = at ?? c.currentTime;
   const len = Math.floor(c.sampleRate * dur);
   const buf = c.createBuffer(1, len, c.sampleRate);
   const data = buf.getChannelData(0);
@@ -80,13 +81,13 @@ function noise(dur: number, vol: number, highpass: number): void {
   src.connect(f);
   f.connect(g);
   g.connect(master);
-  src.start();
+  src.start(t0);
 }
 
 export type SfxKind =
   | 'fire' | 'hit' | 'kill' | 'pickup' | 'levelup'
   | 'hurt' | 'nova' | 'win' | 'lose' | 'ui'
-  | 'zap' | 'shard' | 'well' | 'achv';
+  | 'zap' | 'shard' | 'well' | 'achv' | 'boss' | 'orb';
 
 export function sfx(kind: SfxKind): void {
   const now = performance.now();
@@ -111,5 +112,56 @@ export function sfx(kind: SfxKind): void {
     case 'shard': tone('sine', 880, 1400, 0.06, 0.045); break;
     case 'well': tone('sine', 320, 70, 0.4, 0.1); noise(0.3, 0.04, 200); break;
     case 'achv': [784, 1175, 1568].forEach((f, i) => tone('triangle', f, undefined, 0.14, 0.08, i * 0.09)); break;
+    case 'boss': tone('sawtooth', 82, 41, 0.7, 0.16); tone('sawtooth', 84, 42, 0.7, 0.12); break;
+    case 'orb': tone('square', 420, 160, 0.1, 0.05); break;
   }
+}
+
+// ================= 程序化 BGM =================
+// 16 步序列器：底鼓 + 低音线常驻，镲片/琶音随战况强度分层淡入
+
+let musicInterval: ReturnType<typeof setInterval> | null = null;
+let musicStep = 0;
+let musicNextTime = 0;
+let intensityFn: () => number = () => 0;
+const MUSIC_STEP = 0.24; // 每步秒长（约 125 BPM 的八分音符）
+
+export function startMusic(getIntensity: () => number): void {
+  const c = ensure();
+  if (!c) return; // 音频未解锁前不启动
+  intensityFn = getIntensity;
+  if (musicInterval) return;
+  musicNextTime = c.currentTime + 0.1;
+  musicInterval = setInterval(scheduleMusic, 60);
+}
+
+export function stopMusic(): void {
+  if (musicInterval) {
+    clearInterval(musicInterval);
+    musicInterval = null;
+  }
+}
+
+function scheduleMusic(): void {
+  const c = ctx;
+  if (!c || muted) return;
+  while (musicNextTime < c.currentTime + 0.2) {
+    playMusicStep(musicStep, musicNextTime);
+    musicStep = (musicStep + 1) % 16;
+    musicNextTime += MUSIC_STEP;
+  }
+}
+
+function playMusicStep(s: number, t: number): void {
+  const inten = Math.max(0, Math.min(1, intensityFn()));
+  if (s % 4 === 0) tone('sine', 150, 42, 0.15, 0.15, 0, t); // 底鼓
+  const bassLine = [55, 0, 55, 0, 65.41, 0, 55, 0, 49, 0, 55, 0, 58.27, 0, 55, 82.41];
+  const note = bassLine[s];
+  if (note) tone('square', note, undefined, 0.19, 0.05, 0, t);
+  if (inten > 0.3 && s % 2 === 1) noise(0.03, 0.022, 6000, t); // 镲片
+  if (inten > 0.6 && (s === 6 || s === 14)) {
+    const arp = [220, 261.63, 311.13, 261.63];
+    tone('triangle', arp[(musicStep / 2 | 0) % 4] * 2, undefined, 0.1, 0.045, 0, t);
+  }
+  if (inten > 0.85 && s === 0) tone('sawtooth', 110, 55, 0.4, 0.04, 0, t); // 强度峰值低鸣
 }
