@@ -165,34 +165,51 @@ export class TitleScene extends Phaser.Scene {
     const cam = this.cameras.main;
     if (!cam || !this.grid || !this.grid.scene) return;
     const cx = cam.width / 2;
-    this.grid.setSize(cam.width, cam.height);
-    // 自上而下流式布局：标题 → 副标题 → 设定文案（实测高度）→ 选关提示 → 卡片 → 操作提示
-    const titleSize = Phaser.Math.Clamp(Math.round(cam.height * 0.08), 38, 60);
+    const h = cam.height;
+    this.grid.setSize(cam.width, h);
+
+    // 第一步：按 top=0 流式排布并量出内容总高
+    const titleSize = Phaser.Math.Clamp(Math.round(h * 0.075), 36, 58);
     this.title.setFontSize(titleSize);
-    const titleTop = 18;
-    this.title.setPosition(cx, titleTop + titleSize / 2);
-    this.subtitle.setPosition(cx, titleTop + titleSize + 16);
-    const premiseTop = titleTop + titleSize + 44;
-    this.premise.setPosition(cx, premiseTop);
     this.premise.setWordWrapWidth(Math.min(560, cam.width - 48));
-    const labelY = premiseTop + this.premise.height + 20;
-    this.selectLabel.setPosition(cx, labelY);
+    const titleH = titleSize;
+    const gapSub = 14, gapPremise = 26, gapLabel = 20, gapCard = 36, cardStep = 54, gapHint = 16;
+
+    let y = 0;
+    const titleY = y + titleH / 2;
+    y += titleH + gapSub;
+    const subtitleY = y + 8;
+    y += 16 + gapPremise;
+    const premiseTop = y;
+    y += this.premise.height + gapLabel;
+    const labelY = y + 8;
+    y += 16 + gapCard;
+    const cardY0 = y + 24;
+    y += 2 * cardStep + 48;
+    y += gapHint;
+    const hintY = y + 7;
+    const contentH = y + 14;
+
+    // 第二步：整体垂直居中（过短窗口保底 12px）
+    const top = Math.max((h - contentH) / 2, 12);
+
+    this.title.setPosition(cx, top + titleY);
+    this.subtitle.setPosition(cx, top + subtitleY);
+    this.premise.setPosition(cx, top + premiseTop);
+    this.selectLabel.setPosition(cx, top + labelY);
     this.achvText.setPosition(cam.width - 12, 12);
     this.killReserve.setPosition(12, 12);
     const cardW = Math.min(440, cam.width - 40);
-    const cardY0 = labelY + 40;
-    const step = 54;
     this.cards.forEach((c, i) => {
       if (!c.bg.scene) return;
-      const y = cardY0 + i * step;
-      c.bg.setPosition(cx, y);
-      c.name.setPosition(cx - cardW / 2 + 16, y - 14);
-      c.tag.setPosition(cx + cardW / 2 - 14, y - 14);
-      c.record.setPosition(cx - cardW / 2 + 16, y + 6);
+      const cy = top + cardY0 + i * cardStep;
+      c.bg.setPosition(cx, cy);
+      c.name.setPosition(cx - cardW / 2 + 16, cy - 14);
+      c.tag.setPosition(cx + cardW / 2 - 14, cy - 14);
+      c.record.setPosition(cx - cardW / 2 + 16, cy + 6);
     });
-    const cardsEnd = cardY0 + 2 * step + 24;
-    this.hint.setPosition(cx, cardsEnd + 18);
-    this.footer.setPosition(cx, cam.height - 14);
+    this.hint.setPosition(cx, top + hintY);
+    this.footer.setPosition(cx, h - 12);
   }
 
   update(): void {
