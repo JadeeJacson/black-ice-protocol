@@ -1,0 +1,14 @@
+{
+  "description": "黑冰协议 BLACK ICE PROTOCOL - 微信小游戏",
+  "compileType": "game",
+  "appid": "touristappid",
+  "projectname": "black-ice-protocol",
+  "libVersion": "latest",
+  "setting": {
+    "es6": true,
+    "postcss": false,
+    "minified": true,
+    "urlCheck": false
+  },
+  "condition": {}
+}

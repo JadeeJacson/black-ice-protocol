@@ -50,12 +50,37 @@ npm install
 npm run dev      # 开发服务器
 npm run build    # 类型检查 + 产线构建（输出 dist/）
 npm run preview  # 预览构建产物
+npm run build:wx # 构建微信小游戏（输出 dist-wx/）
 ```
 
 调试便利：
 
 - URL 加 `?canvas` 强制 Canvas 渲染器（GPU 异常时的兼容模式）
 - 控制台 `__BIP.game` 可访问 Phaser.Game 实例
+
+## 移动端
+
+- 触屏虚拟摇杆（按住任意位置拖动），WASD 仅桌面生效
+- 触屏/微信环境自动进入低功耗档：敌人上限 150→90、环境粒子与拖尾降频、爆炸粒子减量
+- 刘海屏安全区适配（HUD、标题、页脚避开 `env(safe-area-inset-*)`）
+- 窄屏布局：计时器下移避让血条，提示文案自动换行，暂停按钮热区扩大到 44px
+
+## 微信小游戏
+
+代码已按平台分层（`src/platform/`：环境检测 / 存储抽象 / 音频回退），构建产物开箱即用：
+
+```bash
+npm run build:wx   # 产出 dist-wx/：game.js + game.json + project.config.json
+```
+
+接入步骤：
+
+1. 注册微信小游戏账号，拿到 `appid`（体验可用 `touristappid` 游客模式）
+2. 安装[微信开发者工具](https://developers.weixin.qq.com/miniprogram/dev/devtools/download.html)
+3. 用开发者工具「导入项目」选择 `dist-wx/` 目录，appid 填自己的（或游客模式）
+4. 真机预览验证；发布前在 `wechat/project.config.json` 里替换 appid
+
+技术说明：入口 `src/wx-main.ts` 引入 `weapp-adapter` DOM 垫片后复用 `src/boot.ts`；存储走 `wx.getStorageSync/setStorageSync`，音频回退 `wx.createWebAudioContext`。当前约 1.5MB，低于 4MB 主包上限。尚未真机验证的部分：iOS 音频首次触发时机、分享卡片与振动等微信特有能力（后续迭代）。
 
 ## 部署
 

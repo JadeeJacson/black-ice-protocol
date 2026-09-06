@@ -1,26 +1,30 @@
+import { storage } from './platform/storage';
+import { wx } from './platform/env';
+
 /** WebAudio 合成音效：无音频资源文件，全部程序化生成 */
 
 let ctx: AudioContext | null = null;
 let master: GainNode | null = null;
-let muted = (() => {
-  try {
-    return localStorage.getItem('bip_muted') === '1';
-  } catch {
-    return false;
-  }
-})();
+let muted = storage.getItem('bip_muted') === '1';
 const lastPlay: Partial<Record<string, number>> = {};
 
 function ensure(): AudioContext | null {
-  if (typeof window === 'undefined') return null;
-  if (!ctx) {
-    const AC = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-    if (!AC) return null;
-    ctx = new AC();
-    master = ctx.createGain();
-    master.gain.value = muted ? 0 : 0.5;
-    master.connect(ctx.destination);
+  const wxc = wx();
+  if (typeof window === 'undefined' && !wxc) return null;
+  if (ctx) return ctx;
+  const w = typeof window === 'undefined' ? {} : window;
+  const wAny = w as { AudioContext?: typeof AudioContext; webkitAudioContext?: typeof AudioContext };
+  const AC = wAny.AudioContext ?? wAny.webkitAudioContext;
+  try {
+    if (AC) ctx = new AC();
+    else if (wxc?.createWebAudioContext) ctx = wxc.createWebAudioContext();
+  } catch {
+    return null;
   }
+  if (!ctx) return null;
+  master = ctx.createGain();
+  master.gain.value = muted ? 0 : 0.5;
+  master.connect(ctx.destination);
   return ctx;
 }
 
@@ -33,11 +37,7 @@ export function unlockAudio(): void {
 export function toggleMute(): boolean {
   muted = !muted;
   if (master) master.gain.value = muted ? 0 : 0.5;
-  try {
-    localStorage.setItem('bip_muted', muted ? '1' : '0');
-  } catch {
-    /* 忽略 */
-  }
+  storage.setItem('bip_muted', muted ? '1' : '0');
   return muted;
 }
 

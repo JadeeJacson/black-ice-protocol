@@ -6,6 +6,7 @@ import { ACHIEVEMENTS } from '../data/achievements';
 import { loadRecords, loadLastStage, saveLastStage, loadAchievements, loadTotalKills } from '../data/save';
 import { makeTextures } from '../systems/textures';
 import { unlockAudio, sfx } from '../audio';
+import { isLowPower, safeInsets } from '../platform/env';
 import { PAL, CSS, FONT } from '../themes';
 
 interface StageCardRefs {
@@ -53,7 +54,7 @@ export class TitleScene extends Phaser.Scene {
       alpha: { start: 0.2, end: 0 },
       blendMode: 'ADD',
       tint: [PAL.neonCyan, PAL.neonPurple, PAL.neonMagenta],
-      frequency: 180,
+      frequency: isLowPower() ? 500 : 180,
     }).setDepth(-5);
 
     this.title = this.add.text(0, 0, GAME_TITLE, {
@@ -131,11 +132,11 @@ export class TitleScene extends Phaser.Scene {
     }).setScrollFactor(0).setDepth(10);
 
     this.hint = this.add.text(0, 0, 'WASD / 方向键 移动    ·    触屏拖动移动    ·    ESC 暂停    ·    M 静音', {
-      fontFamily: FONT, fontSize: '12px', color: CSS.textDim,
+      fontFamily: FONT, fontSize: '12px', color: CSS.textDim, align: 'center',
     }).setOrigin(0.5).setScrollFactor(0).setDepth(10);
 
     this.footer = this.add.text(0, 0, '致敬威廉·吉布森《蔓生三部曲》意象 · 文案原创 · Phaser 3 + TypeScript', {
-      fontFamily: FONT, fontSize: '10px', color: CSS.textDim,
+      fontFamily: FONT, fontSize: '10px', color: CSS.textDim, align: 'center',
     }).setOrigin(0.5).setScrollFactor(0).setDepth(10);
 
     this.scale.on('resize', this.onResize);
@@ -166,6 +167,7 @@ export class TitleScene extends Phaser.Scene {
     if (!cam || !this.grid || !this.grid.scene) return;
     const cx = cam.width / 2;
     const h = cam.height;
+    const inset = safeInsets();
     this.grid.setSize(cam.width, h);
 
     // 第一步：按 top=0 流式排布并量出内容总高
@@ -190,8 +192,9 @@ export class TitleScene extends Phaser.Scene {
     const hintY = y + 7;
     const contentH = y + 14;
 
-    // 第二步：整体垂直居中（过短窗口保底 12px）
-    const top = Math.max((h - contentH) / 2, 12);
+    // 第二步：整体垂直居中（过短窗口保底，且避开刘海安全区）
+    const availH = h - inset.top - inset.bottom;
+    const top = Math.max((availH - contentH) / 2, 12) + inset.top;
 
     this.title.setPosition(cx, top + titleY);
     this.subtitle.setPosition(cx, top + subtitleY);
@@ -209,7 +212,9 @@ export class TitleScene extends Phaser.Scene {
       c.record.setPosition(cx - cardW / 2 + 16, cy + 6);
     });
     this.hint.setPosition(cx, top + hintY);
-    this.footer.setPosition(cx, h - 12);
+    this.hint.setWordWrapWidth(cam.width - 32);
+    this.footer.setPosition(cx, h - 12 - inset.bottom);
+    this.footer.setWordWrapWidth(cam.width - 32);
   }
 
   update(): void {

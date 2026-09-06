@@ -1,4 +1,6 @@
-/** localStorage 存档：成就 / 关卡纪录 / 局数 / 上次选关 */
+/** localStorage 存档：成就 / 关卡纪录 / 局数 / 上次选关 / 击杀储备 */
+
+import { storage } from '../platform/storage';
 
 export interface StageRecord {
   wins: number;
@@ -6,16 +8,9 @@ export interface StageRecord {
   bestAlive: number; // 秒
 }
 
-const K_ACHV = 'bip_achv';
-const K_RECORDS = 'bip_records';
-const K_PLAYCOUNT = 'bip_playcount';
-const K_LASTSTAGE = 'bip_laststage';
-const K_TOTALKILLS = 'bip_totalkills';
-const K_BUFFS = 'bip_buffs';
-
 function readJSON<T>(key: string, fallback: T): T {
+  const raw = storage.getItem(key);
   try {
-    const raw = localStorage.getItem(key);
     return raw ? (JSON.parse(raw) as T) : fallback;
   } catch {
     return fallback;
@@ -24,11 +19,18 @@ function readJSON<T>(key: string, fallback: T): T {
 
 function writeJSON(key: string, value: unknown): void {
   try {
-    localStorage.setItem(key, JSON.stringify(value));
+    storage.setItem(key, JSON.stringify(value));
   } catch {
-    /* 隐私模式等场景下静默失败 */
+    /* 存储不可用时静默失败 */
   }
 }
+
+const K_ACHV = 'bip_achv';
+const K_RECORDS = 'bip_records';
+const K_PLAYCOUNT = 'bip_playcount';
+const K_LASTSTAGE = 'bip_laststage';
+const K_TOTALKILLS = 'bip_totalkills';
+const K_BUFFS = 'bip_buffs';
 
 export function loadAchievements(): string[] {
   return readJSON<string[]>(K_ACHV, []);

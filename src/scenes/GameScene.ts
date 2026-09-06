@@ -16,12 +16,15 @@ import { makeTextures } from '../systems/textures';
 import { Joystick } from '../systems/Joystick';
 import { DamageNumbers } from '../systems/DamageNumbers';
 import { AchievementToast } from '../systems/AchievementToast';
+import { isLowPower, safeInsets } from '../platform/env';
 import { sfx, toggleMute, isMuted, startMusic, stopMusic } from '../audio';
 import { PAL, CSS, FONT } from '../themes';
 
 const WORLD = 2400;
-const MAX_ENEMIES = 150;
 const BULLET_DMG = 10;
+/** 低性能档（触屏/微信）降低敌人上限与粒子密度 */
+const LOW_POWER = isLowPower();
+const MAX_ENEMIES = LOW_POWER ? 90 : 150;
 
 interface ArcFx {
   pts: Phaser.Math.Vector2[];
@@ -203,7 +206,7 @@ export class GameScene extends Phaser.Scene {
       alpha: { start: 0.22, end: 0 },
       blendMode: 'ADD',
       tint: [this.stage.accent, PAL.neonPurple],
-      frequency: 140,
+      frequency: LOW_POWER ? 420 : 140,
     }).setDepth(-8);
 
     // ---- 玩家与镜头 ----
@@ -219,7 +222,7 @@ export class GameScene extends Phaser.Scene {
       alpha: { start: 0.28, end: 0 },
       blendMode: 'ADD',
       tint: this.stage.accent,
-      frequency: 45,
+      frequency: LOW_POWER ? 110 : 45,
     }).setDepth(11);
 
     // ---- 对象池 ----
@@ -286,8 +289,13 @@ export class GameScene extends Phaser.Scene {
     }).setOrigin(0.5, 0).setScrollFactor(0).setDepth(85).setAlpha(0);
     this.muteHint = this.add.text(0, 0, 'M 静音 · ESC 暂停', { fontFamily: FONT, fontSize: '11px', color: CSS.textDim })
       .setOrigin(1, 1).setScrollFactor(0).setDepth(80);
-    this.pauseBtn = this.add.text(0, 0, '‖', { fontFamily: FONT, fontSize: '20px', color: CSS.textDim })
-      .setOrigin(0.5).setScrollFactor(0).setDepth(80).setInteractive({ useHandCursor: true });
+    this.pauseBtn = this.add.text(0, 0, '‖', { fontFamily: FONT, fontSize: '22px', color: CSS.textDim })
+      .setOrigin(0.5).setScrollFactor(0).setDepth(80);
+    // 触屏热区放大：文字只有 ~14px，命中区扩到 44px 见方
+    this.pauseBtn.setInteractive(
+      new Phaser.Geom.Rectangle(-15, -13, 44, 40),
+      Phaser.Geom.Rectangle.Contains,
+    );
     this.pauseBtn.on('pointerover', () => this.pauseBtn.setColor('#ffffff'));
     this.pauseBtn.on('pointerout', () => this.pauseBtn.setColor(CSS.textDim));
     this.pauseBtn.on('pointerdown', () => this.togglePause());
@@ -1406,18 +1414,22 @@ export class GameScene extends Phaser.Scene {
   private layout(): void {
     const cam = this.cameras.main;
     if (!cam || !this.hud || !this.scan || !this.hud.scene) return;
+    const inset = safeInsets();
     const s = Phaser.Math.Clamp(cam.width / 520, 0.72, 1);
     this.hud.setScale(s);
-    this.timeText.setPosition(cam.width / 2, 26);
-    this.message.setPosition(cam.width / 2, 62);
+    // 窄屏时 HUD 行与中央计时器同高会重叠，把计时器下移一行并缩小
+    const narrow = cam.width < 480;
+    this.timeText.setFontSize(narrow ? '18px' : '24px');
+    this.timeText.setPosition(cam.width / 2, (narrow ? 46 : 26) + inset.top);
+    this.message.setPosition(cam.width / 2, (narrow ? 78 : 62) + inset.top);
     this.message.setWordWrapWidth(cam.width - 60);
-    this.muteHint.setPosition(cam.width - 34, cam.height - 8);
-    this.pauseBtn.setPosition(cam.width - 16, 24);
+    this.muteHint.setPosition(cam.width - 34 - inset.right, cam.height - 8 - inset.bottom);
+    this.pauseBtn.setPosition(cam.width - 16 - inset.right, 24 + inset.top);
     this.vignette.setPosition(cam.width / 2, cam.height / 2);
     this.vignette.setDisplaySize(cam.width * 1.05, cam.height * 1.05);
-    this.bossBarName.setPosition(cam.width / 2, 44);
-    this.bossBarBg.setPosition(cam.width / 2, 57);
-    this.bossBarFill.setPosition(cam.width / 2 - 150, 57);
+    this.bossBarName.setPosition(cam.width / 2, 44 + inset.top);
+    this.bossBarBg.setPosition(cam.width / 2, 57 + inset.top);
+    this.bossBarFill.setPosition(cam.width / 2 - 150, 57 + inset.top);
     this.scan.setSize(cam.width, cam.height);
   }
 
@@ -1446,7 +1458,7 @@ export class GameScene extends Phaser.Scene {
       tint,
       emitting: false,
     }).setDepth(16);
-    em.explode(n);
+    em.explode(LOW_POWER ? Math.ceil(n * 0.6) : n);
     this.time.delayedCall(600, () => em.destroy());
   }
 
