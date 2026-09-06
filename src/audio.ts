@@ -2,7 +2,13 @@
 
 let ctx: AudioContext | null = null;
 let master: GainNode | null = null;
-let muted = false;
+let muted = (() => {
+  try {
+    return localStorage.getItem('bip_muted') === '1';
+  } catch {
+    return false;
+  }
+})();
 const lastPlay: Partial<Record<string, number>> = {};
 
 function ensure(): AudioContext | null {
@@ -12,7 +18,7 @@ function ensure(): AudioContext | null {
     if (!AC) return null;
     ctx = new AC();
     master = ctx.createGain();
-    master.gain.value = 0.5;
+    master.gain.value = muted ? 0 : 0.5;
     master.connect(ctx.destination);
   }
   return ctx;
@@ -27,6 +33,15 @@ export function unlockAudio(): void {
 export function toggleMute(): boolean {
   muted = !muted;
   if (master) master.gain.value = muted ? 0 : 0.5;
+  try {
+    localStorage.setItem('bip_muted', muted ? '1' : '0');
+  } catch {
+    /* 忽略 */
+  }
+  return muted;
+}
+
+export function isMuted(): boolean {
   return muted;
 }
 
@@ -70,11 +85,12 @@ function noise(dur: number, vol: number, highpass: number): void {
 
 export type SfxKind =
   | 'fire' | 'hit' | 'kill' | 'pickup' | 'levelup'
-  | 'hurt' | 'nova' | 'win' | 'lose' | 'ui';
+  | 'hurt' | 'nova' | 'win' | 'lose' | 'ui'
+  | 'zap' | 'shard' | 'well' | 'achv';
 
 export function sfx(kind: SfxKind): void {
   const now = performance.now();
-  const throttle: Partial<Record<SfxKind, number>> = { fire: 80, hit: 70, kill: 90, pickup: 70 };
+  const throttle: Partial<Record<SfxKind, number>> = { fire: 80, hit: 70, kill: 90, pickup: 70, zap: 130, shard: 110, well: 500 };
   const min = throttle[kind];
   if (min !== undefined) {
     if (now - (lastPlay[kind] ?? 0) < min) return;
@@ -91,5 +107,9 @@ export function sfx(kind: SfxKind): void {
     case 'win': [523, 659, 784, 1047, 1319].forEach((f, i) => tone('triangle', f, undefined, 0.35, 0.09, i * 0.12)); break;
     case 'lose': [330, 262, 196, 131].forEach((f, i) => tone('sawtooth', f, f * 0.7, 0.4, 0.1, i * 0.18)); break;
     case 'ui': tone('square', 520, undefined, 0.05, 0.05); break;
+    case 'zap': noise(0.08, 0.07, 1400); tone('square', 1300, 180, 0.09, 0.05); break;
+    case 'shard': tone('sine', 880, 1400, 0.06, 0.045); break;
+    case 'well': tone('sine', 320, 70, 0.4, 0.1); noise(0.3, 0.04, 200); break;
+    case 'achv': [784, 1175, 1568].forEach((f, i) => tone('triangle', f, undefined, 0.14, 0.08, i * 0.09)); break;
   }
 }

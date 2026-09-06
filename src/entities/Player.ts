@@ -27,6 +27,14 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   novaDmg = 35;
   novaRadius = 140;
 
+  // 过载协议（暴击）
+  critChance = 0;
+
+  // 链式电弧 / 蚀刻飞刃 / 引力异常（等级，计时器在场景侧）
+  arcLevel = 0;
+  shardLevel = 0;
+  wellLevel = 0;
+
   invuln = 0;
   fireCooldown = 0;
 

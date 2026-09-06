@@ -52,14 +52,57 @@ export function makeTextures(scene: Phaser.Scene): void {
     c.fillRect(1, 5, 12, 4);
   });
 
-  // 玩家（飞梭，朝上）
-  mk('player', 26, 26, (c) => {
+  // 玩家（骇客进程尖梭，朝上）：外框 + 内脊线 + 翼缺口
+  mk('player', 30, 30, (c) => {
     c.beginPath();
-    c.moveTo(13, 1); c.lineTo(24, 23); c.lineTo(13, 17); c.lineTo(2, 23);
+    c.moveTo(15, 1); c.lineTo(27, 26); c.lineTo(15, 19); c.lineTo(3, 26);
     c.closePath();
-    c.fillStyle = 'rgba(255,255,255,0.2)';
+    c.fillStyle = 'rgba(255,255,255,0.16)';
     c.fill();
     c.lineWidth = 2;
+    c.strokeStyle = 'rgba(255,255,255,1)';
+    c.stroke();
+    c.beginPath(); // 内脊线
+    c.moveTo(15, 5); c.lineTo(15, 16);
+    c.lineWidth = 1.5;
+    c.strokeStyle = 'rgba(255,255,255,0.8)';
+    c.stroke();
+    c.beginPath(); // 翼线
+    c.moveTo(7, 22); c.lineTo(12, 18);
+    c.moveTo(23, 22); c.lineTo(18, 18);
+    c.lineWidth = 1.5;
+    c.strokeStyle = 'rgba(255,255,255,0.6)';
+    c.stroke();
+  });
+
+  // 玩家外围虚环（进程光环，代码中旋转）
+  mk('ringSeg', 56, 56, (c) => {
+    c.lineWidth = 2;
+    c.strokeStyle = 'rgba(255,255,255,0.9)';
+    c.beginPath(); // 两段对置圆弧
+    c.arc(28, 28, 22, -0.5, 0.5 + Math.PI * 0.6);
+    c.stroke();
+    c.beginPath();
+    c.arc(28, 28, 22, Math.PI - 0.5, Math.PI + 0.5 + Math.PI * 0.6);
+    c.stroke();
+    c.lineWidth = 2;
+    // 四个刻度
+    for (const a of [Math.PI / 4, (3 * Math.PI) / 4, (5 * Math.PI) / 4, (7 * Math.PI) / 4]) {
+      c.beginPath();
+      c.moveTo(28 + Math.cos(a) * 24, 28 + Math.sin(a) * 24);
+      c.lineTo(28 + Math.cos(a) * 28, 28 + Math.sin(a) * 28);
+      c.stroke();
+    }
+  });
+
+  // 蚀刻飞刃（细长菱形，横向）
+  mk('shard', 18, 6, (c) => {
+    c.beginPath();
+    c.moveTo(9, 0); c.lineTo(18, 3); c.lineTo(9, 6); c.lineTo(0, 3);
+    c.closePath();
+    c.fillStyle = 'rgba(255,255,255,0.35)';
+    c.fill();
+    c.lineWidth = 1.5;
     c.strokeStyle = 'rgba(255,255,255,1)';
     c.stroke();
   });

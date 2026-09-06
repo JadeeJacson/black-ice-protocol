@@ -22,4 +22,8 @@ export const UPGRADES: UpgradeDef[] = [
   { id: 'nova',   name: '脉冲新星',       desc: '周期性释放电磁冲击波，叠加后更强',          max: 4, weight: 6,  apply: (_s, p) => { p.novaLevel += 1; p.novaDmg += 25; p.novaRadius += 25; } },
   { id: 'magnet', name: '数据引力阱',     desc: '拾取范围 +45%',                            max: 4, weight: 7,  apply: (_s, p) => { p.pickupRange *= 1.45; } },
   { id: 'repair', name: '纳米修复液',     desc: '立即恢复 60% 生命',                        max: 9, weight: 4,  apply: (_s, p) => { p.hp = Math.min(p.maxHp, p.hp + p.maxHp * 0.6); } },
+  { id: 'crit',   name: '过载协议',       desc: '暴击率 +8%，暴击造成 2.5 倍伤害',          max: 5, weight: 7,  apply: (_s, p) => { p.critChance += 0.08; } },
+  { id: 'arc',    name: '链式电弧',       desc: '【电】周期性释放电弧，在敌人间连锁跳跃',    max: 4, weight: 6,  apply: (_s, p) => { p.arcLevel += 1; } },
+  { id: 'shard',  name: '蚀刻飞刃',       desc: '【蚀】周期性射出自动追踪敌人的飞刃',        max: 4, weight: 6,  apply: (_s, p) => { p.shardLevel += 1; } },
+  { id: 'well',   name: '引力异常',       desc: '【引】生成引力井聚拢敌人，随后内爆',        max: 4, weight: 6,  apply: (_s, p) => { p.wellLevel += 1; } },
 ];

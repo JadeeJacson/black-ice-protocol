@@ -5,6 +5,7 @@
 
 export const GAME_TITLE = '黑冰协议';
 export const GAME_TITLE_EN = 'BLACK ICE PROTOCOL';
+export const GAME_VERSION = 'v0.2';
 
 export const PREMISE = [
   '2049 年，蔓生城。',
