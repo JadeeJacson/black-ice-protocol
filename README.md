@@ -2,7 +2,7 @@
 
 一款赛博朋克题材的幸存者割草（Survivors-like）网页游戏。致敬威廉·吉布森《蔓生三部曲》的意象（矩阵 / ICE / 黑冰 / 义体 / 蔓生城），剧情文案为原创。
 
-**在线游玩：https://你的用户名.github.io/black-ice-protocol/**（部署后回填）
+**在线游玩：<https://jadeejacson.github.io/black-ice-protocol/>**
 
 ## 玩法
 
